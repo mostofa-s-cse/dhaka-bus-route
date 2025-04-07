@@ -1,111 +1,173 @@
 import { Request, Response, NextFunction } from "express";
 import * as authService from "../../services/v1/authService";
 import { AppError } from "../../middlewares/errorHandler";
-import { asyncHandler, sendResponse } from "../../utils/responseHandler";
 
-// Type extension
-declare global {
-    namespace Express {
-        interface Request {
-            user: { id: string; }
-        }
+/**
+ * Registers a new user.
+ * - Accepts `email`, `password`, and `name` in the request body.
+ * - Calls the authService to create a new user and sends an OTP to the user's email.
+ * - Returns a success message upon successful registration.
+ */
+export const register = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, password, name } = req.body;
+        const result = await authService.registerUser(email, password, name);
+        res.status(201).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
     }
-}
+};
 
 /**
- * Register a new user.
- * - Hashes the password.
- * - Saves the user to the database.
- * - Sends an OTP for email verification.
+ * Verifies the OTP sent to the user's email during registration.
+ * - Accepts `email` and `otp` in the request body.
+ * - Verifies the OTP and updates the user's email verification status.
+ * - Returns a success message if the OTP is valid.
  */
-export const register = asyncHandler(async (req: Request, res: Response) => {
-    const { email, password, name } = req.body;
-    const result = await authService.registerUser(email, password, name);
-    sendResponse(res, 201, result);
-});
+export const verify = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, otp } = req.body;
+        const result = await authService.verifyOtp(email, otp);
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
- * Verify the user's email using an OTP.
- * - Checks if the OTP is valid.
- * - Marks the email as verified.
+ * Resends a One-Time Password (OTP) to the user's email.
+ * - Accepts `email` in the request body.
+ * - Calls the authService to generate and send a new OTP to the provided email.
+ * - Returns a success message if the OTP is successfully sent.
+ * - Passes any encountered errors to the error-handling middleware.
  */
-export const verify = asyncHandler(async (req: Request, res: Response) => {
-    const { email, otp } = req.body;
-    const result = await authService.verifyOtp(email, otp);
-    sendResponse(res, 200, result);
-});
+export const resendOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email } = req.body;
+        const result = await authService.resendOtp(email);
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
- * Resend OTP for email verification.
- * - Sends a new OTP to the user's email.
+ * Logs in the user.
+ * - Accepts `email` and `password` in the request body.
+ * - Authenticates the user, generates an access token and refresh token.
+ * - Returns the tokens if authentication is successful.
  */
-export const resendOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { email } = req.body;
-    const result = await authService.resendOtp(email);
-    sendResponse(res, 200, result);
-});
+export const login = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, password } = req.body;
+        const result = await authService.loginUser(email, password);
+        res.status(200).json({
+            success: true,
+            message: "Login successful. Welcome back!",
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
- * Log in a user.
- * - Validates email and password.
- * - Returns an access token and refresh token.
+ * Refresh the access token using the refresh token.
+ * - Verifies the refresh token and generates new access and refresh tokens.
+ * - Returns the new tokens if successful.
  */
-export const login = asyncHandler(async (req: Request, res: Response) => {
-    const { email, password } = req.body;
-    const result = await authService.loginUser(email, password);
-    sendResponse(res, 200, result, "Login successful. Welcome back!");
-});
-
-/**
- * Refresh access token using a refresh token.
- * - Validates the refresh token.
- * - Issues a new access token and refresh token.
- */
-export const refresh = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const refresh = async (req: Request, res: Response, next: NextFunction) => {
     const { refreshToken } = req.body;
+
     if (!refreshToken) {
-        throw new AppError("Refresh token is required", 400);
+        return next(new AppError("Refresh token is required", 400));
     }
-    const result = await authService.refreshTokens(refreshToken);
-    sendResponse(res, 200, result);
-});
+
+    try {
+        const result = await authService.refreshTokens(refreshToken);
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 
 /**
- * Request a password reset.
- * - Sends an OTP to reset the password.
+ * Requests a password reset.
+ * - Accepts `email` in the request body.
+ * - Calls the authService to generate a reset token and sends it to the user's email.
+ * - Returns a success message upon successful request.
  */
-export const requestPasswordReset = asyncHandler(async (req: Request, res: Response) => {
-    const result = await authService.requestPasswordReset(req.body.email);
-    sendResponse(res, 200, { message: result });
-});
+export const requestPasswordReset = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email } = req.body;
+
+        // Call the service to handle the password reset request
+        const result = await authService.requestPasswordReset(email);
+
+        res.status(200).json({
+            success: true,
+            message: result, // result is the success message returned from service
+        });
+    } catch (error) {
+        next(error); // Pass the error to the error handler middleware
+    }
+};
 
 /**
- * Reset password using an OTP.
- * - Validates OTP.
- * - Updates the password in the database.
+ * Resets the password using the provided OTP.
+ * - Accepts `email`, `otp`, and `newPassword` in the request body.
+ * - Calls the authService to reset the user's password.
+ * - Returns a success message upon successful reset.
  */
-export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
-    const { email, otp, newPassword } = req.body;
-    const result = await authService.resetPassword(email, otp, newPassword);
-    sendResponse(res, 200, { message: result });
-});
+export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        // Call the service to handle the password reset
+        const result = await authService.resetPassword(email, otp, newPassword);
+
+        res.status(200).json({
+            success: true,
+            message: result, // result is the success message returned from service
+        });
+    } catch (error) {
+        next(error); // Pass the error to the error handler middleware
+    }
+};
+
+
+import * as userService from "../../services/v1/userService";
 
 /**
- * Logout a user.
- * - Clears the refresh token.
+ * Get the authenticated user's details.
+ * - Requires the `userId` extracted from the token middleware.
  */
-export const logout = asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken } = req.body;
-    await authService.logout(refreshToken);
-    sendResponse(res, 200, { message: "Logout successful." });
-});
+export const getAuthUser = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = Number(req.user?.id);
+        if (isNaN(userId)) {
+            throw new AppError("Invalid user ID", 400);
+        }
 
-/**
- * Get current authenticated user details.
- * - Returns user information based on the authenticated user.
- */
-export const me = asyncHandler(async (req: Request, res: Response) => {
-    const user = await authService.getUserById(req.user.id);
-    sendResponse(res, 200, { user });
-});
-
+        const user = await authService.getAuthUser(userId);
+        res.status(200).json({
+            success: true,
+            data: user,
+        });
+    } catch (error) {
+        next(error);
+    }
+};

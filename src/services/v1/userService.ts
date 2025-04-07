@@ -1,37 +1,75 @@
 import { AppError } from "../../middlewares/errorHandler";
 import prisma from "../../config/database";
-import { validateEmail } from "../../utils/emailValidation"; 
+import {validateEmail} from "../../utils/emailValidation";
+import bcrypt from "bcrypt"; // Custom error handling
 
 /**
- * Get all users.
- * @returns A list of users with selected fields.
+ * Create new user
+ * @param name
+ * @param email
+ * @param password
+ */
+export const createUser = async (name: string, email: string, password: string) => {
+    // Validate email format before processing
+    validateEmail(email);
+
+    // Check if the user already exists
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+        throw new AppError("User already exists", 400);
+    }
+
+    // Hash the password before saving to the database
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create the user in the database with hashed password
+    const user = await prisma.user.create({
+        data: {
+            name,
+            email,
+            password: hashedPassword,
+        },
+    });
+
+    return user;
+};
+
+/**
+ * View the users
  */
 export const getAllUsers = async () => {
-    return await prisma.user.findMany({
+    const users = await prisma.user.findMany({
         select: {
             id: true,
             email: true,
             name: true,
+            profileImage: true,
+            emailVerified: true,
             createdAt: true,
             updatedAt: true,
         },
     });
+    return users;
 };
 
 /**
  * Update the user profile.
  * @param id User ID to update.
- * @param data Object containing fields to update (name, email, profileImage).
+ * @param data Object containing fields to update (name, email, image).
  * @returns Updated user data.
  */
 export const updateUser = async (id: string, data: { name?: string; email?: string; profileImage?: string }) => {
     // Validate email format if email is provided
-    if (data.email) validateEmail(data.email);
+    if (data.email) {
+        validateEmail(data.email);
+    }
 
     const existingUser = await prisma.user.findUnique({ where: { id: parseInt(id) } });
-    if (!existingUser) throw new AppError("User not found", 404);
+    if (!existingUser) {
+        throw new AppError("User not found", 404);
+    }
 
-    return await prisma.user.update({
+    const updatedUser = await prisma.user.update({
         where: { id: parseInt(id) },
         data,
         select: {
@@ -43,16 +81,19 @@ export const updateUser = async (id: string, data: { name?: string; email?: stri
             updatedAt: true,
         },
     });
+
+    return updatedUser;
 };
 
 /**
- * Delete a user.
- * @param id User ID to delete.
- * @throws AppError if the user is not found.
+ * Delete User
+ * @param id
  */
 export const deleteUser = async (id: string) => {
     const existingUser = await prisma.user.findUnique({ where: { id: parseInt(id) } });
-    if (!existingUser) throw new AppError("User not found", 404);
+    if (!existingUser) {
+        throw new AppError("User not found", 404);
+    }
 
     await prisma.user.delete({ where: { id: parseInt(id) } });
 };

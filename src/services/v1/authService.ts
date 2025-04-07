@@ -1,10 +1,12 @@
+// src/services/userService.ts
+
 import { AppError } from "../../middlewares/errorHandler";
 import prisma from "../../config/database";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { sendEmail } from "../../utils/email";
-import { validateEmail } from "../../utils/emailValidation"; 
-import { generateOtp, generateOtpExpiry } from "../../utils/generateOtp"; 
+import { validateEmail } from "../../utils/emailValidation"; // Import validateEmail function
+import { generateOtp, generateOtpExpiry } from "../../utils/generateOtp"; // Import OTP utility functions
 
 /**
  * Register a new user.
@@ -13,17 +15,22 @@ import { generateOtp, generateOtpExpiry } from "../../utils/generateOtp";
  * - Sends an OTP for email verification.
  */
 export const registerUser = async (email: string, password: string, name: string) => {
-    validateEmail(email); // Validate email format before processing
+    // Validate email format before processing
+    validateEmail(email);
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) throw new AppError("User already exists", 400);
+    if (existingUser) {
+        throw new AppError("User already exists", 400);
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({ data: { email, password: hashedPassword, name } });
+    const user = await prisma.user.create({
+        data: { email, password: hashedPassword, name },
+    });
 
     const otp = generateOtp(); // Generate OTP using utility
     await sendEmail(email, "Verify Your Email", name, otp); // Send OTP email
-    await prisma.user.update({ where: { id: user.id }, data: { otp } });
+    await prisma.user.update({ where: { id: user["id"] }, data: { otp } });
 
     return { message: "User registered successfully. Please verify your email." };
 };
@@ -34,13 +41,21 @@ export const registerUser = async (email: string, password: string, name: string
  * - Marks the email as verified.
  */
 export const verifyOtp = async (email: string, otp: string) => {
-    validateEmail(email); // Validate email format before processing
+    // Validate email format before processing
+    validateEmail(email);
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError("User not found", 404);
-    if (user.otp !== otp) throw new AppError("Invalid OTP", 400);
+    if (!user) {
+        throw new AppError("User not found", 404);
+    }
+    if (user["otp"] !== otp) {
+        throw new AppError("Invalid OTP", 400);
+    }
 
-    await prisma.user.update({ where: { email }, data: { emailVerified: true, otp: null } });
+    await prisma.user.update({
+        where: { email },
+        data: { emailVerified: true, otp: null },
+    });
 
     return { message: "Email verified successfully." };
 };
@@ -50,15 +65,24 @@ export const verifyOtp = async (email: string, otp: string) => {
  * - Generates a new OTP and sends it via email.
  */
 export const resendOtp = async (email: string) => {
-    validateEmail(email); // Validate email format before processing
+    // Validate email format before processing
+    validateEmail(email);
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError("User not found", 404);
-    if (user.emailVerified) throw new AppError("Email is already verified", 400);
-    if (!user.name) throw new AppError("User name is missing", 400);
+    if (!user) {
+        throw new AppError("User not found", 404);
+    }
+    if (user["emailVerified"]) {
+        throw new AppError("Email is already verified", 400);
+    }
+
+    if (!user["name"]) {
+        throw new AppError("User name is missing", 400);
+    }
 
     const otp = generateOtp(); // Generate new OTP using utility
-    await sendEmail(email, "Verify Your Email", user.name, otp);
+    await sendEmail(email, "Verify Your Email", user["name"], otp);
+
     await prisma.user.update({ where: { email }, data: { otp } });
 
     return { message: "OTP sent successfully. Please check your email." };
@@ -70,19 +94,26 @@ export const resendOtp = async (email: string) => {
  * - Generates access and refresh tokens.
  */
 export const loginUser = async (email: string, password: string) => {
-    validateEmail(email); // Validate email format before processing
+    // Validate email format before processing
+    validateEmail(email);
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError("Invalid email or password", 401);
-    if (!user.emailVerified) throw new AppError("Email not verified", 403);
+    if (!user) {
+        throw new AppError("Invalid email or password", 401);
+    }
+    if (!user["emailVerified"]) {
+        throw new AppError("Email not verified", 403);
+    }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) throw new AppError("Invalid email or password", 401);
+    const isPasswordValid = await bcrypt.compare(password, user["password"]);
+    if (!isPasswordValid) {
+        throw new AppError("Invalid email or password", 401);
+    }
 
-    const accessToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET!, { expiresIn: "60m" });
-    const refreshToken = jwt.sign({ id: user.id }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d" });
+    const accessToken = jwt.sign({ id: user["id"] }, process.env.JWT_SECRET!, { expiresIn: "60m" });
+    const refreshToken = jwt.sign({ id: user["id"] }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d" });
 
-    await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
+    await prisma.user.update({ where: { id: user["id"] }, data: { refreshToken } });
 
     return { user, accessToken, refreshToken };
 };
@@ -97,13 +128,21 @@ export const refreshTokens = async (refreshToken: string) => {
     const decoded: any = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
     const userId = decoded.id;
 
+    // Retrieve the user from the database
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.refreshToken !== refreshToken) throw new AppError("Invalid refresh token", 401);
+    if (!user || user["refreshToken"] !== refreshToken) {
+        throw new AppError("Invalid refresh token", 401);
+    }
 
-    const accessToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET!, { expiresIn: "15m" });
-    const newRefreshToken = jwt.sign({ id: user.id }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d" });
+    // Generate new access and refresh tokens
+    const accessToken = jwt.sign({ id: user["id"] }, process.env.JWT_SECRET!, { expiresIn: "15m" });
+    const newRefreshToken = jwt.sign({ id: user["id"] }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d" });
 
-    await prisma.user.update({ where: { id: user.id }, data: { refreshToken: newRefreshToken } });
+    // Update the refresh token in the database
+    await prisma.user.update({
+        where: { id: user["id"] },
+        data: { refreshToken: newRefreshToken },
+    });
 
     return { accessToken, refreshToken: newRefreshToken };
 };
@@ -113,21 +152,33 @@ export const refreshTokens = async (refreshToken: string) => {
  * @param email The user's email address.
  */
 export const requestPasswordReset = async (email: string) => {
-    validateEmail(email); // Validate email format before processing
+    // Validate email format before processing
+    validateEmail(email);
 
+    // Check if user exists
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError("User not found", 404);
+    if (!user) {
+        throw new AppError("User not found", 404);
+    }
 
+    // Generate a reset OTP (6 digits)
     const otp = generateOtp(); // Generate OTP using utility
+
+    // Set OTP expiry time to 3 minutes from now
     const otpExpiry = generateOtpExpiry(); // Generate OTP expiry using utility
 
+    // Save the OTP and its expiry to the user's record
     await prisma.user.update({
         where: { email },
-        data: { passwordResetToken: otp, passwordResetTokenExpires: otpExpiry },
+        data: {
+            passwordResetToken: otp, // Store OTP as the reset token
+            passwordResetTokenExpires: otpExpiry,
+        },
     });
 
+    // Send the OTP via email
     const emailMessage = `You requested a password reset. Use the following OTP to reset your password: ${otp}. It will expire in 3 minutes.`;
-    await sendEmail(email, "Password Reset OTP", user.name || "User", emailMessage);
+    await sendEmail(email, "Password Reset OTP", user["name"] || "User", emailMessage);
 
     return "Password reset OTP has been sent to your email. Please check your inbox.";
 };
@@ -139,57 +190,49 @@ export const requestPasswordReset = async (email: string) => {
  * @param newPassword The new password to set.
  */
 export const resetPassword = async (email: string, otp: string, newPassword: string) => {
+    // Check if user exists
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError("User not found", 404);
-    if (user.passwordResetToken !== otp) throw new AppError("Invalid OTP", 400);
-    if (!user.passwordResetTokenExpires || user.passwordResetTokenExpires < new Date()) throw new AppError("OTP has expired", 400);
+    if (!user) {
+        throw new AppError("User not found", 404);
+    }
 
+    // Check if the OTP matches
+    if (user["passwordResetToken"] !== otp) {
+        throw new AppError("Invalid OTP", 400);
+    }
+
+    // Check if OTP has expired (handle case where passwordResetTokenExpires might be null)
+    if (!user["passwordResetTokenExpires"] || user["passwordResetTokenExpires"] < new Date()) {
+        throw new AppError("OTP has expired", 400);
+    }
+
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update the user's password and clear the OTP fields
     await prisma.user.update({
         where: { email },
-        data: { password: hashedPassword, passwordResetToken: null, passwordResetTokenExpires: null },
+        data: {
+            password: hashedPassword,
+            passwordResetToken: null, // Clear OTP after successful reset
+            passwordResetTokenExpires: null, // Clear OTP expiry
+        },
     });
 
     return "Your password has been reset successfully.";
 };
 
 /**
- * Logout user by invalidating refresh token.
- * - Finds user by refresh token and clears it.
+ * Fetch the authenticated user's details.
+ * - Verifies the user ID from the token.
+ * - Returns user data without sensitive fields like password.
  */
-export const logout = async (refreshToken: string) => {
-    const user = await prisma.user.findFirst({ 
-        where: { 
-            refreshToken: refreshToken,
-        }
-    });
-
-    if (!user) {
-        throw new AppError("Invalid refresh token", 404);
-    }
-
-    await prisma.user.update({
-        where: { id: user.id },
-        data: { refreshToken: null }
-    });
-};
-/**
- * Get current user details.
- * - Returns user information excluding sensitive data.
- */
-export const getUserById = async (userId: string) => {
+export const getAuthUser = async (userId: number) => {
     const user = await prisma.user.findUnique({
-        where: { id: parseInt(userId) },
-        select: {
-            id: true,
-            email: true,
-            name: true,
-            emailVerified: true,
-            profileImage: true,
-            createdAt: true,
-            updatedAt: true
-        }
+        where: { id: userId },
     });
-    if (!user) throw new AppError("User not found", 404);
+    if (!user) {
+        throw new AppError("User not found", 404);
+    }
     return user;
 };
